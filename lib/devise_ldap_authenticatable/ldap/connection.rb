@@ -161,8 +161,8 @@ module Devise
       def user_groups
         connection = ::Devise.ldap_use_admin_for_groups ? Connection.admin : self.ldap
 
-        DeviseLdapAuthenticatable::Logger.send("Getting groups for #{dn}")
-        filter = Net::LDAP::Filter.eq("uniqueMember", dn)
+        DeviseLdapAuthenticatable::Logger.send("Getting groups for #{dn} (memberUid = #{@login.to_s})")
+        filter = Net::LDAP::Filter.eq("memberUid", @login.to_s)
         connection.search(:filter => filter, :base => @group_base).collect(&:dn)
       end
 
