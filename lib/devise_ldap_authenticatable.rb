@@ -42,6 +42,9 @@ module Devise
 
   mattr_accessor :ldap_use_admin_for_groups
   @@ldap_use_admin_for_groups = true
+
+  mattr_accessor :ldap_fake_it
+  @@ldap_fake_it = false
 end
 
 # Add ldap_authenticatable strategy to defaults.

@@ -9,10 +9,15 @@ module Devise
         ldap_config["ssl"] = :simple_tls if ldap_config["ssl"] === true
         ldap_options[:encryption] = ldap_config["ssl"].to_sym if ldap_config["ssl"]
 
-        @ldap = Net::LDAP.new(ldap_options)
-        @ldap.host = ldap_config["host"]
-        @ldap.port = ldap_config["port"]
-        @ldap.base = ldap_config["base"]
+        @fake_it = ::Devise.ldap_fake_it
+
+        unless @fake_it
+          @ldap = Net::LDAP.new(ldap_options)
+          @ldap.host = ldap_config["host"]
+          @ldap.port = ldap_config["port"]
+          @ldap.base = ldap_config["base"]
+        end
+
         @attribute = ldap_config["attribute"]
         @ldap_auth_username_builder = params[:ldap_auth_username_builder]
 
@@ -49,11 +54,11 @@ module Devise
       def ldap_param_value(param)
         filter = Net::LDAP::Filter.eq(@attribute.to_s, @login.to_s)
         ldap_entry = nil
-        @ldap.search(:filter => filter) {|entry| ldap_entry = entry}
+        search(:filter => filter) {|entry| ldap_entry = entry}
 
         if ldap_entry
-          unless ldap_entry[param].empty?
-            value = ldap_entry.send(param)
+          unless ldap_entry[param.to_sym].empty? && ldap_entry[param].empty?
+            value = ldap_entry.send(param.to_sym) || ldap_entry.send(param)
             DeviseLdapAuthenticatable::Logger.send("Requested param #{param} has value #{value}")
             value
           else
@@ -67,6 +72,12 @@ module Devise
       end
 
       def authenticate!
+        if @fake_it
+          DeviseLdapAuthenticatable::Logger.send("Faking the login")
+          return true if @login == @password
+          return false
+        end
+
         @ldap.auth(dn, @password)
         @ldap.bind
       end
@@ -178,12 +189,31 @@ module Devise
         filter = Net::LDAP::Filter.eq(@attribute.to_s, @login.to_s)
         ldap_entry = nil
         match_count = 0
-        @ldap.search(:filter => filter) {|entry| ldap_entry = entry; match_count+=1}
+        search(filter) {|entry| ldap_entry = entry; match_count+=1}
         DeviseLdapAuthenticatable::Logger.send("LDAP search yielded #{match_count} matches")
         ldap_entry
       end
 
       private
+
+      def search(filter)
+        if @fake_it
+          ldap_entry = {
+            :dn => "#{@username},ou=people,dc=example,dc=com",
+            :uid => "#{@username}",
+            :email => "#{@username}@example.com",
+            :cn => "#{@username} Example"
+          }
+
+          def ldap_entry.method_missing(s, *args, &block)
+            self[s.to_s]
+          end
+
+          yield ldap_entry
+        else
+          yield @ldap.search(:filter => filter)
+        end
+      end
 
       def self.admin
         ldap = Connection.new(:admin => true).ldap
